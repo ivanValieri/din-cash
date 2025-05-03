@@ -2,34 +2,42 @@ import { supabase, SupabaseUser, SupabaseMission, SupabaseMissionCompletion, Sup
 
 // ===== USUÁRIOS =====
 
-// Autenticar usuário com número de telefone
+// Autenticar usuário com número de telefone usando Supabase Auth
 export const signInWithPhoneNumber = async (phoneNumber: string, password: string) => {
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('phone_number', phoneNumber)
-    .limit(1)
-    .single();
-
+  const { data, error } = await supabase.auth.signInWithPassword({
+    phone: phoneNumber,
+    password,
+  });
   if (error) {
     return { user: null, error: error.message };
   }
-
-  // Aqui você precisa implementar a verificação de senha
-  // Em um ambiente real, você deve usar hash de senha
-  if (data.password !== password) {
-    return { user: null, error: 'Senha incorreta' };
+  // Buscar dados extras na tabela users
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', data.user.id)
+    .single();
+  if (userError) {
+    return { user: null, error: userError.message };
   }
-
-  return { user: data as SupabaseUser, error: null };
+  return { user: userData as SupabaseUser, error: null };
 };
 
-// Cadastrar novo usuário
+// Cadastrar novo usuário usando Supabase Auth
 export const signUpUser = async (phoneNumber: string, name: string, password: string, email?: string) => {
-  const { data, error } = await supabase
+  const { data, error } = await supabase.auth.signUp({
+    phone: phoneNumber,
+    password,
+  });
+  if (error || !data.user) {
+    return { user: null, error: error?.message || 'Erro ao criar usuário' };
+  }
+  // Inserir dados extras na tabela users
+  const { data: userData, error: userError } = await supabase
     .from('users')
     .insert([
       {
+        id: data.user.id,
         phone_number: phoneNumber,
         name,
         password, // Em produção, use hash
@@ -40,12 +48,10 @@ export const signUpUser = async (phoneNumber: string, name: string, password: st
     ])
     .select()
     .single();
-
-  if (error) {
-    return { user: null, error: error.message };
+  if (userError) {
+    return { user: null, error: userError.message };
   }
-
-  return { user: data as SupabaseUser, error: null };
+  return { user: userData as SupabaseUser, error: null };
 };
 
 // Obter usuário por ID

@@ -75,59 +75,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Tentar autenticação via Supabase
+    // Tentar autenticação via Supabase Auth
     const { user, error } = await signInWithPhoneNumber(phoneNumber, password);
 
     if (user) {
-      // Usuário existe
       setCurrentUser({
         id: user.id,
         phoneNumber: user.phone_number,
         isAdmin: user.is_admin,
         balance: user.balance,
       });
-      
       if (user.is_admin) {
         navigate("/admin");
       } else {
         navigate("/dashboard");
       }
-      
       toast({
         title: "Login realizado com sucesso",
         description: "Bem-vindo de volta!",
       });
-    } else if (error) {
-      // Verificar se o erro é porque o usuário não existe
-      if (error.includes("not found")) {
-        // Criar novo usuário
-        const { user: newUser, error: signUpError } = await signUpUser(phoneNumber, "Novo Usuário", password);
-        
-        if (newUser) {
-          setCurrentUser({
-            id: newUser.id,
-            phoneNumber: newUser.phone_number,
-            isAdmin: newUser.is_admin,
-            balance: newUser.balance,
-          });
-          
-          navigate("/dashboard");
-          toast({
-            title: "Conta criada com sucesso",
-            description: "Bem-vindo ao DinCash!",
-          });
-        } else {
-          toast({
-            title: "Erro ao criar conta",
-            description: signUpError || "Ocorreu um erro ao criar a conta",
-            variant: "destructive",
-          });
-        }
-      } else {
-        // Outro tipo de erro
+    } else {
+      // Se não existe, tenta criar
+      const { user: newUser, error: signUpError } = await signUpUser(phoneNumber, "Novo Usuário", password);
+      if (newUser) {
+        setCurrentUser({
+          id: newUser.id,
+          phoneNumber: newUser.phone_number,
+          isAdmin: newUser.is_admin,
+          balance: newUser.balance,
+        });
+        navigate("/dashboard");
         toast({
-          title: "Erro de login",
-          description: error,
+          title: "Conta criada com sucesso",
+          description: "Bem-vindo ao DinCash!",
+        });
+      } else {
+        toast({
+          title: "Erro ao criar conta",
+          description: signUpError || "Ocorreu um erro ao criar a conta",
           variant: "destructive",
         });
       }
