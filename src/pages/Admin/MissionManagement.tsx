@@ -20,20 +20,30 @@ import { Label } from "@/components/ui/label";
 import Header from "@/components/Layout/Header";
 import Footer from "@/components/Layout/Footer";
 import { Plus, Trash, CheckCircle, XCircle, Edit, Link } from "lucide-react";
-import { Mission, getMissions, saveMissions } from "@/data/missionsData";
 import { useToast } from "@/hooks/use-toast";
+import { 
+  getAllMissions, 
+  createMission, 
+  deleteMission, 
+  getPendingMissionCompletions,
+  approveMissionCompletion,
+  rejectMissionCompletion
+} from "@/services/supabaseService";
+import { SupabaseMission, SupabaseMissionCompletion } from "@/config/supabase";
 
 const MissionManagement = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [missions, setMissions] = useState<Mission[]>([]);
+  const [missions, setMissions] = useState<SupabaseMission[]>([]);
+  const [pendingCompletions, setPendingCompletions] = useState<any[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [value, setValue] = useState("");
   const [url, setUrl] = useState("");
   const [isFixedForNewUsers, setIsFixedForNewUsers] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     // Redirect if not admin
@@ -42,12 +52,50 @@ const MissionManagement = () => {
       return;
     }
 
-    // Load missions
-    const loadedMissions = getMissions();
-    setMissions(loadedMissions);
+    loadData();
   }, [currentUser, navigate]);
 
-  const handleAddMission = () => {
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // Carregar missões
+      const { missions: loadedMissions, error: missionsError } = await getAllMissions();
+      if (missionsError) {
+        toast({
+          title: "Erro ao carregar missões",
+          description: missionsError,
+          variant: "destructive",
+        });
+      } else {
+        setMissions(loadedMissions);
+      }
+
+      // Carregar missões pendentes
+      const { pendingCompletions: loadedPendingCompletions, error: pendingError } = 
+        await getPendingMissionCompletions();
+      
+      if (pendingError) {
+        toast({
+          title: "Erro ao carregar missões pendentes",
+          description: pendingError,
+          variant: "destructive",
+        });
+      } else {
+        setPendingCompletions(loadedPendingCompletions);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error);
+      toast({
+        title: "Erro ao carregar dados",
+        description: "Ocorreu um erro ao carregar os dados. Por favor, tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddMission = async () => {
     // Validation
     if (!title || !description || !value) {
       toast({
@@ -68,133 +116,145 @@ const MissionManagement = () => {
       return;
     }
 
-    // Create new mission
-    const newMission: Mission = {
-      id: Date.now().toString(),
-      title,
-      description,
-      value: missionValue,
-      isFixedForNewUsers: isFixedForNewUsers,
-      completions: [],
-      pendingApproval: [],
-      url: url.trim() || undefined, // Add URL if provided
-    };
+    setLoading(true);
+    try {
+      // Create new mission
+      const newMissionData = {
+        title,
+        description,
+        value: missionValue,
+        is_fixed_for_new_users: isFixedForNewUsers,
+        url: url.trim() || undefined
+      };
 
-    // Add mission to state and save to localStorage
-    const updatedMissions = [...missions, newMission];
-    setMissions(updatedMissions);
-    saveMissions(updatedMissions);
+      const { mission, error } = await createMission(newMissionData);
 
-    // Reset form
-    setTitle("");
-    setDescription("");
-    setValue("");
-    setUrl("");
-    setIsFixedForNewUsers(false);
-
-    toast({
-      title: "Missão adicionada",
-      description: "A missão foi adicionada com sucesso",
-    });
-  };
-
-  const handleDeleteMission = (id: string) => {
-    const updatedMissions = missions.filter(mission => mission.id !== id);
-    setMissions(updatedMissions);
-    saveMissions(updatedMissions);
-
-    toast({
-      title: "Missão removida",
-      description: "A missão foi removida com sucesso",
-    });
-  };
-
-  const handleApproveMission = (missionId: string, userPhoneNumber: string) => {
-    // Find the mission to get its value
-    const mission = missions.find(m => m.id === missionId);
-    if (!mission) {
-      toast({
-        title: "Erro",
-        description: "Missão não encontrada.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Update missions state
-    const updatedMissions = missions.map(m => {
-      if (m.id === missionId) {
-        // Remove from pending and add to completions
-        const updatedPendingApproval = m.pendingApproval.filter(
-          phone => phone !== userPhoneNumber
-        );
-        return {
-          ...m,
-          pendingApproval: updatedPendingApproval,
-          completions: [...m.completions, userPhoneNumber],
-        };
-      }
-      return m;
-    });
-    
-    setMissions(updatedMissions);
-    saveMissions(updatedMissions);
-
-    // Get users from localStorage
-    const usersString = localStorage.getItem("dincashUsers");
-    if (usersString) {
-      const users = JSON.parse(usersString);
-      
-      if (users[userPhoneNumber]) {
-        // Update the user's balance
-        const currentBalance = users[userPhoneNumber].balance || 0;
-        const newBalance = currentBalance + mission.value;
-        
-        users[userPhoneNumber].balance = newBalance;
-        localStorage.setItem("dincashUsers", JSON.stringify(users));
-        
+      if (error) {
         toast({
-          title: "Missão aprovada",
-          description: `A missão foi aprovada e o saldo do usuário foi atualizado para ${newBalance.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}`,
-        });
-      } else {
-        toast({
-          title: "Erro",
-          description: "Usuário não encontrado.",
+          title: "Erro ao adicionar missão",
+          description: error,
           variant: "destructive",
         });
+      } else {
+        setMissions(prev => [...prev, mission]);
+
+        // Reset form
+        setTitle("");
+        setDescription("");
+        setValue("");
+        setUrl("");
+        setIsFixedForNewUsers(false);
+
+        toast({
+          title: "Missão adicionada",
+          description: "A missão foi adicionada com sucesso",
+        });
       }
-    } else {
+    } catch (error) {
+      console.error("Erro ao adicionar missão:", error);
       toast({
-        title: "Erro",
-        description: "Dados de usuário não encontrados.",
+        title: "Erro ao adicionar missão",
+        description: "Ocorreu um erro ao adicionar a missão. Por favor, tente novamente.",
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleRejectMission = (missionId: string, userPhoneNumber: string) => {
-    const updatedMissions = missions.map(mission => {
-      if (mission.id === missionId) {
-        // Just remove from pending
-        const updatedPendingApproval = mission.pendingApproval.filter(
-          phone => phone !== userPhoneNumber
-        );
-        return {
-          ...mission,
-          pendingApproval: updatedPendingApproval,
-        };
-      }
-      return mission;
-    });
-    
-    setMissions(updatedMissions);
-    saveMissions(updatedMissions);
+  const handleDeleteMission = async (id: string) => {
+    setLoading(true);
+    try {
+      const { success, error } = await deleteMission(id);
 
-    toast({
-      title: "Missão rejeitada",
-      description: "A missão foi rejeitada e voltará a aparecer para o usuário",
-    });
+      if (error) {
+        toast({
+          title: "Erro ao remover missão",
+          description: error,
+          variant: "destructive",
+        });
+      } else {
+        setMissions(prev => prev.filter(mission => mission.id !== id));
+
+        toast({
+          title: "Missão removida",
+          description: "A missão foi removida com sucesso",
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao remover missão:", error);
+      toast({
+        title: "Erro ao remover missão",
+        description: "Ocorreu um erro ao remover a missão. Por favor, tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveMission = async (completionId: string, userId: string, missionValue: number) => {
+    setLoading(true);
+    try {
+      const { success, error } = await approveMissionCompletion(completionId, userId, missionValue);
+
+      if (error) {
+        toast({
+          title: "Erro ao aprovar missão",
+          description: error,
+          variant: "destructive",
+        });
+      } else {
+        // Atualizar a lista de missões pendentes
+        setPendingCompletions(prev => prev.filter(completion => completion.id !== completionId));
+
+        toast({
+          title: "Missão aprovada",
+          description: "A missão foi aprovada e o saldo do usuário foi atualizado",
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao aprovar missão:", error);
+      toast({
+        title: "Erro ao aprovar missão",
+        description: "Ocorreu um erro ao aprovar a missão. Por favor, tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectMission = async (completionId: string) => {
+    setLoading(true);
+    try {
+      const { success, error } = await rejectMissionCompletion(completionId);
+
+      if (error) {
+        toast({
+          title: "Erro ao rejeitar missão",
+          description: error,
+          variant: "destructive",
+        });
+      } else {
+        // Atualizar a lista de missões pendentes
+        setPendingCompletions(prev => prev.filter(completion => completion.id !== completionId));
+
+        toast({
+          title: "Missão rejeitada",
+          description: "A missão foi rejeitada com sucesso",
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao rejeitar missão:", error);
+      toast({
+        title: "Erro ao rejeitar missão",
+        description: "Ocorreu um erro ao rejeitar a missão. Por favor, tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -203,16 +263,6 @@ const MissionManagement = () => {
       currency: 'BRL',
     });
   };
-
-  // Get pending missions
-  const pendingApprovals = missions.flatMap(mission => 
-    mission.pendingApproval.map(phone => ({
-      missionId: mission.id,
-      missionTitle: mission.title,
-      missionValue: mission.value,
-      userPhone: phone,
-    }))
-  );
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -265,37 +315,32 @@ const MissionManagement = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="url">Link para realizar a missão (opcional)</Label>
-                    <div className="flex">
-                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-50 text-gray-500">
-                        <Link className="h-4 w-4" />
-                      </span>
-                      <Input
-                        id="url"
-                        placeholder="https://exemplo.com"
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                        className="rounded-l-none"
-                      />
-                    </div>
+                    <Label htmlFor="url">URL (opcional)</Label>
+                    <Input
+                      id="url"
+                      placeholder="URL para redirecionamento"
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                    />
                   </div>
                   <div className="flex items-center space-x-2">
                     <Switch
-                      id="fixed-mission"
+                      id="fixed-new-users"
                       checked={isFixedForNewUsers}
                       onCheckedChange={setIsFixedForNewUsers}
                     />
-                    <Label htmlFor="fixed-mission">
-                      Missão fixa para novos usuários
-                    </Label>
+                    <Label htmlFor="fixed-new-users">Fixar para novos usuários</Label>
                   </div>
                 </div>
                 <DialogFooter>
                   <DialogClose asChild>
                     <Button variant="outline">Cancelar</Button>
                   </DialogClose>
-                  <Button className="btn-primary" onClick={handleAddMission}>
-                    Adicionar Missão
+                  <Button
+                    onClick={handleAddMission}
+                    disabled={loading}
+                  >
+                    {loading ? "Adicionando..." : "Adicionar Missão"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -307,51 +352,55 @@ const MissionManagement = () => {
               <TabsTrigger value="all">Todas as Missões</TabsTrigger>
               <TabsTrigger value="pending" className="relative">
                 Missões em Análise
-                {pendingApprovals.length > 0 && (
+                {pendingCompletions.length > 0 && (
                   <span className="absolute -top-1 -right-1 bg-dincash-orange text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {pendingApprovals.length}
+                    {pendingCompletions.length}
                   </span>
                 )}
               </TabsTrigger>
             </TabsList>
             
             <TabsContent value="all">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {missions.map((mission) => (
-                  <Card key={mission.id} className="card-hover">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">{mission.title}</CardTitle>
-                        <div className="text-dincash-orange font-bold">
-                          {formatCurrency(mission.value)}
+              {loading ? (
+                <div className="text-center p-8">
+                  <p>Carregando missões...</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {missions.map((mission) => (
+                    <Card key={mission.id} className="card-hover">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <CardTitle className="text-lg">{mission.title}</CardTitle>
+                          <div className="text-dincash-orange font-bold">
+                            {formatCurrency(mission.value)}
+                          </div>
                         </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-gray-600 mb-4 text-sm">{mission.description}</p>
-                      {mission.isFixedForNewUsers && (
-                        <div className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded mb-4 inline-block">
-                          Fixa para novos usuários
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-gray-600 mb-4 text-sm">{mission.description}</p>
+                        {mission.is_fixed_for_new_users && (
+                          <div className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded mb-4 inline-block">
+                            Fixa para novos usuários
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center">
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            onClick={() => handleDeleteMission(mission.id)}
+                            disabled={loading}
+                          >
+                            <Trash className="h-4 w-4 mr-1" /> Remover
+                          </Button>
                         </div>
-                      )}
-                      <div className="flex justify-between items-center">
-                        <div className="text-xs text-gray-500">
-                          {mission.completions.length} completadas
-                        </div>
-                        <Button 
-                          variant="destructive" 
-                          size="sm"
-                          onClick={() => handleDeleteMission(mission.id)}
-                        >
-                          <Trash className="h-4 w-4 mr-1" /> Remover
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
 
-              {missions.length === 0 && (
+              {!loading && missions.length === 0 && (
                 <div className="text-center p-8 bg-white rounded-lg shadow">
                   <p className="text-gray-500">
                     Nenhuma missão cadastrada. Clique em 'Nova Missão' para adicionar.
@@ -359,65 +408,71 @@ const MissionManagement = () => {
                 </div>
               )}
             </TabsContent>
-
+            
             <TabsContent value="pending">
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                {pendingApprovals.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="py-3 px-4 text-left">Usuário</th>
-                          <th className="py-3 px-4 text-left">Missão</th>
-                          <th className="py-3 px-4 text-left">Valor</th>
-                          <th className="py-3 px-4 text-right">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pendingApprovals.map((item, index) => (
-                          <tr 
-                            key={`${item.missionId}-${item.userPhone}`} 
-                            className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
+              {loading ? (
+                <div className="text-center p-8">
+                  <p>Carregando missões pendentes...</p>
+                </div>
+              ) : pendingCompletions.length === 0 ? (
+                <div className="text-center p-8 bg-white rounded-lg shadow">
+                  <p className="text-gray-500">
+                    Não há missões pendentes de aprovação.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {pendingCompletions.map(completion => (
+                    <Card key={completion.id} className="card-hover">
+                      <CardHeader>
+                        <div className="flex justify-between items-start">
+                          <CardTitle className="text-lg">
+                            {completion.missions.title}
+                          </CardTitle>
+                          <div className="text-dincash-orange font-bold">
+                            {formatCurrency(completion.missions.value)}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="mb-4">
+                          <span className="text-sm font-semibold">Usuário: </span>
+                          <span className="text-sm">{completion.users.name} ({completion.users.phone_number})</span>
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleRejectMission(completion.id)}
+                            disabled={loading}
                           >
-                            <td className="py-3 px-4">{item.userPhone}</td>
-                            <td className="py-3 px-4">{item.missionTitle}</td>
-                            <td className="py-3 px-4">{formatCurrency(item.missionValue)}</td>
-                            <td className="py-3 px-4 text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button 
-                                  size="sm" 
-                                  className="bg-green-600 hover:bg-green-700"
-                                  onClick={() => handleApproveMission(item.missionId, item.userPhone)}
-                                >
-                                  <CheckCircle className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="destructive"
-                                  onClick={() => handleRejectMission(item.missionId, item.userPhone)}
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center p-8">
-                    <p className="text-gray-500">
-                      Não há missões pendentes para aprovação.
-                    </p>
-                  </div>
-                )}
-              </div>
+                            <XCircle className="h-4 w-4 mr-1" /> Rejeitar
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => 
+                              handleApproveMission(
+                                completion.id, 
+                                completion.users.id, 
+                                completion.missions.value
+                              )
+                            }
+                            disabled={loading}
+                          >
+                            <CheckCircle className="h-4 w-4 mr-1" /> Aprovar
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>
       </main>
-
+      
       <Footer />
     </div>
   );

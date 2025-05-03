@@ -1,9 +1,11 @@
-
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { signInWithPhoneNumber, signUpUser, updateUserBalance as updateSupabaseUserBalance } from "@/services/supabaseService";
+import { SupabaseUser } from "@/config/supabase";
 
 interface User {
+  id: string;
   phoneNumber: string;
   isAdmin: boolean;
   balance: number;
@@ -11,9 +13,9 @@ interface User {
 
 interface AuthContextType {
   currentUser: User | null;
-  login: (phoneNumber: string, password: string) => void;
+  login: (phoneNumber: string, password: string) => Promise<void>;
   logout: () => void;
-  updateBalance: (newBalance: number) => void;
+  updateBalance: (newBalance: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -48,7 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser]);
 
-  // Mock users database
+  // Administrador fixo para caso de emergência
   const adminUser = {
     phoneNumber: "73982505494",
     password: "admgeral",
@@ -56,92 +58,79 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     balance: 0,
   };
 
-  // Mock regular users database
-  const [users, setUsers] = useState<{[key: string]: {password: string, isAdmin: boolean, balance: number}}>(() => {
-    const savedUsers = localStorage.getItem("dincashUsers");
-    return savedUsers ? JSON.parse(savedUsers) : { 
-      [adminUser.phoneNumber]: {
-        password: adminUser.password,
-        isAdmin: adminUser.isAdmin,
-        balance: adminUser.balance,
-      }
-    };
-  });
-
-  // Save users whenever it changes
-  useEffect(() => {
-    localStorage.setItem("dincashUsers", JSON.stringify(users));
-  }, [users]);
-
-  const login = (phoneNumber: string, password: string) => {
-    // Admin check
-    if (phoneNumber === adminUser.phoneNumber) {
-      if (password === adminUser.password) {
-        setCurrentUser({
-          phoneNumber,
-          isAdmin: true,
-          balance: 0,
-        });
-        navigate("/admin");
-        toast({
-          title: "Login realizado com sucesso",
-          description: "Bem-vindo, Administrador!",
-        });
-        return;
-      } else {
-        toast({
-          title: "Erro de login",
-          description: "Senha incorreta para administrador",
-          variant: "destructive",
-        });
-        return;
-      }
+  const login = async (phoneNumber: string, password: string) => {
+    // Admin fixo para emergência (backup)
+    if (phoneNumber === adminUser.phoneNumber && password === adminUser.password) {
+      setCurrentUser({
+        id: "admin",
+        phoneNumber,
+        isAdmin: true,
+        balance: 0,
+      });
+      navigate("/admin");
+      toast({
+        title: "Login realizado com sucesso",
+        description: "Bem-vindo, Administrador!",
+      });
+      return;
     }
 
-    // Regular user check
-    if (users[phoneNumber]) {
-      if (users[phoneNumber].password === password) {
-        setCurrentUser({
-          phoneNumber,
-          isAdmin: false,
-          balance: users[phoneNumber].balance,
-        });
-        navigate("/dashboard");
-        toast({
-          title: "Login realizado com sucesso",
-          description: "Bem-vindo de volta!",
-        });
+    // Tentar autenticação via Supabase
+    const { user, error } = await signInWithPhoneNumber(phoneNumber, password);
+
+    if (user) {
+      // Usuário existe
+      setCurrentUser({
+        id: user.id,
+        phoneNumber: user.phone_number,
+        isAdmin: user.is_admin,
+        balance: user.balance,
+      });
+      
+      if (user.is_admin) {
+        navigate("/admin");
       } else {
+        navigate("/dashboard");
+      }
+      
+      toast({
+        title: "Login realizado com sucesso",
+        description: "Bem-vindo de volta!",
+      });
+    } else if (error) {
+      // Verificar se o erro é porque o usuário não existe
+      if (error.includes("not found")) {
+        // Criar novo usuário
+        const { user: newUser, error: signUpError } = await signUpUser(phoneNumber, "Novo Usuário", password);
+        
+        if (newUser) {
+          setCurrentUser({
+            id: newUser.id,
+            phoneNumber: newUser.phone_number,
+            isAdmin: newUser.is_admin,
+            balance: newUser.balance,
+          });
+          
+          navigate("/dashboard");
+          toast({
+            title: "Conta criada com sucesso",
+            description: "Bem-vindo ao DinCash!",
+          });
+        } else {
+          toast({
+            title: "Erro ao criar conta",
+            description: signUpError || "Ocorreu um erro ao criar a conta",
+            variant: "destructive",
+          });
+        }
+      } else {
+        // Outro tipo de erro
         toast({
           title: "Erro de login",
-          description: "Senha incorreta",
+          description: error,
           variant: "destructive",
         });
       }
-    } else {
-      // Create new user
-      const newUser = {
-        password,
-        isAdmin: false,
-        balance: 0,
-      };
-      
-      setUsers(prevUsers => ({
-        ...prevUsers,
-        [phoneNumber]: newUser
-      }));
-      
-      setCurrentUser({
-        phoneNumber,
-        isAdmin: false,
-        balance: 0,
-      });
-      
-      navigate("/dashboard");
-      toast({
-        title: "Conta criada com sucesso",
-        description: "Bem-vindo ao DinCash!",
-      });
     }
   };
 
@@ -154,18 +143,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const updateBalance = (newBalance: number) => {
+  const updateBalance = async (newBalance: number) => {
     if (currentUser) {
-      setCurrentUser({ ...currentUser, balance: newBalance });
-      
-      // Update users state as well
-      setUsers(prevUsers => ({
-        ...prevUsers,
-        [currentUser.phoneNumber]: {
-          ...prevUsers[currentUser.phoneNumber],
-          balance: newBalance
+      // Atualizar no Supabase
+      if (currentUser.id !== "admin") {
+        const { user, error } = await updateSupabaseUserBalance(currentUser.id, newBalance);
+        
+        if (error) {
+          toast({
+            title: "Erro ao atualizar saldo",
+            description: error,
+            variant: "destructive",
+          });
+          return;
         }
-      }));
+      }
+      
+      // Atualizar localmente
+      setCurrentUser({ ...currentUser, balance: newBalance });
     }
   };
 
