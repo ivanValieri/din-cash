@@ -8,6 +8,7 @@ export const signInWithPhoneNumber = async (phoneNumber: string, password: strin
     .from('users')
     .select('*')
     .eq('phone_number', phoneNumber)
+    .limit(1)
     .single();
 
   if (error) {
