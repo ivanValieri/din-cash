@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { signInWithPhoneNumber, signUpUser, updateUserBalance as updateSupabaseUserBalance } from "@/services/supabaseService";
 import { SupabaseUser } from "@/config/supabase";
+import { supabase } from "@/config/supabase";
 
 interface User {
   id: string;
@@ -79,6 +80,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { user, error } = await signInWithPhoneNumber(phoneNumber, password);
 
     if (user) {
+      // Verificar se a sessão está realmente autenticada
+      const { data: sessionData } = await supabase.auth.getSession();
+      
+      if (!sessionData.session) {
+        toast({
+          title: "Erro de autenticação",
+          description: "Sessão não autenticada. Tente novamente.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       setCurrentUser({
         id: user.id,
         phoneNumber: user.phone_number,
@@ -98,6 +111,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Se não existe, tenta criar
       const { user: newUser, error: signUpError } = await signUpUser(phoneNumber, "Novo Usuário", password);
       if (newUser) {
+        // Verificar se a sessão está realmente autenticada
+        const { data: sessionData } = await supabase.auth.getSession();
+        
+        if (!sessionData.session) {
+          toast({
+            title: "Erro de autenticação",
+            description: "Conta criada, mas sessão não autenticada. Tente fazer login.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
         setCurrentUser({
           id: newUser.id,
           phoneNumber: newUser.phone_number,

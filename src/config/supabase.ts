@@ -4,8 +4,18 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-// Cria o cliente do Supabase
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Configurações adicionais para persistir a sessão
+const supabaseOptions = {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: 'supabase.auth.token',
+  },
+};
+
+// Cria o cliente do Supabase com as opções de autenticação
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, supabaseOptions);
 
 // Interfaces para os tipos de dados
 export interface SupabaseUser {
