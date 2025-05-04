@@ -30,6 +30,7 @@ import {
   rejectMissionCompletion
 } from "@/services/supabaseService";
 import { SupabaseMission, SupabaseMissionCompletion } from "@/config/supabase";
+import { supabase } from "@/config/supabase";
 
 const MissionManagement = () => {
   const { currentUser } = useAuth();
@@ -127,9 +128,16 @@ const MissionManagement = () => {
         url: url.trim() || undefined
       };
 
+      console.log("Dados da missão para criar:", newMissionData);
+
+      // Verificar se o usuário está autenticado
+      const { data: authData } = await supabase.auth.getSession();
+      console.log("Sessão atual (antes de criar missão):", authData);
+
       const { mission, error } = await createMission(newMissionData);
 
       if (error) {
+        console.error("Erro retornado pelo createMission:", error);
         toast({
           title: "Erro ao adicionar missão",
           description: error,

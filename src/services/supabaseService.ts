@@ -103,13 +103,27 @@ export const updateUserBalance = async (userId: string, newBalance: number) => {
 
 // Criar nova missão
 export const createMission = async (mission: Omit<SupabaseMission, 'id' | 'created_at'>) => {
+  // Verificar se tem sessão ativa
+  const { data: sessionData } = await supabase.auth.getSession();
+  console.log("Sessão atual:", sessionData);
+  
+  // Garantir que o campo is_fixed_for_new_users existe
+  const missionData = {
+    ...mission,
+    is_fixed_for_new_users: mission.is_fixed_for_new_users || false,
+  };
+  
+  console.log("Tentando criar missão:", missionData);
+  
+  // Usar o cliente supabase com autenticação
   const { data, error } = await supabase
     .from('missions')
-    .insert([mission])
+    .insert([missionData])
     .select()
     .single();
 
   if (error) {
+    console.error("Erro ao criar missão:", error);
     return { mission: null, error: error.message };
   }
 
