@@ -4,6 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
+console.log("Supabase URL:", supabaseUrl);
+console.log("Supabase Key configurada:", supabaseAnonKey ? "Sim (valor oculto)" : "Não configurada");
+
 // Configurações adicionais para persistir a sessão
 const supabaseOptions = {
   auth: {
@@ -13,23 +16,45 @@ const supabaseOptions = {
     // Usar localStorage para armazenar o token
     storage: {
       getItem: (key: string) => {
-        const value = localStorage.getItem(key);
-        return value ? value : null;
+        try {
+          const value = localStorage.getItem(key);
+          return value ? value : null;
+        } catch (error) {
+          console.error('Erro ao ler localStorage:', error);
+          return null;
+        }
       },
       setItem: (key: string, value: string) => {
-        localStorage.setItem(key, value);
+        try {
+          localStorage.setItem(key, value);
+        } catch (error) {
+          console.error('Erro ao escrever localStorage:', error);
+        }
       },
       removeItem: (key: string) => {
-        localStorage.removeItem(key);
+        try {
+          localStorage.removeItem(key);
+        } catch (error) {
+          console.error('Erro ao remover localStorage:', error);
+        }
       }
     }
   },
   global: {
     // Sempre enviar os cabeçalhos de autenticação
     headers: { 
-      'X-Supabase-Auth-Include': 'true'
+      'X-Supabase-Auth-Include': 'true',
+      'Content-Type': 'application/json'
     }
-  }
+  },
+  realtime: {
+    // Para garantir que eventuais eventos em tempo real funcionem
+    params: {
+      eventsPerSecond: 10
+    }
+  },
+  // Adicionar debug para ver erros de rede
+  debug: true
 };
 
 // Cria o cliente do Supabase com as opções de autenticação
@@ -37,8 +62,31 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, supabaseOptio
 
 // Verifique se há uma sessão ao iniciar
 (async () => {
-  const { data } = await supabase.auth.getSession();
-  console.log("Sessão carregada:", data);
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error("Erro ao verificar sessão:", error);
+    } else {
+      console.log("Sessão carregada:", data);
+      
+      // Verificar o usuário 
+      if (data.session?.user) {
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('is_admin')
+          .eq('id', data.session.user.id)
+          .single();
+          
+        if (userError) {
+          console.error("Erro ao buscar dados de admin:", userError);
+        } else {
+          console.log("Usuário é admin?", userData?.is_admin);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Exceção ao verificar sessão:", e);
+  }
 })();
 
 // Interfaces para os tipos de dados

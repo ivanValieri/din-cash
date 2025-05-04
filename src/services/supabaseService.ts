@@ -105,7 +105,27 @@ export const updateUserBalance = async (userId: string, newBalance: number) => {
 export const createMission = async (mission: Omit<SupabaseMission, 'id' | 'created_at'>) => {
   // Verificar se tem sessão ativa
   const { data: sessionData } = await supabase.auth.getSession();
-  console.log("Sessão atual:", sessionData);
+  console.log("Sessão atual para criação de missão:", sessionData?.session);
+  
+  // Se não tem sessão, retorna erro
+  if (!sessionData?.session) {
+    console.error("Tentativa de criar missão sem sessão ativa");
+    return { mission: null, error: "Sem sessão ativa. Faça login novamente." };
+  }
+  
+  // Verificar se o usuário é admin
+  const { data: userData, error: userError } = await supabase
+    .from('users')
+    .select('is_admin')
+    .eq('id', sessionData.session.user.id)
+    .single();
+    
+  if (userError || !userData?.is_admin) {
+    console.error("Usuário não é admin ou erro ao verificar:", userError);
+    return { mission: null, error: "Apenas administradores podem criar missões." };
+  }
+  
+  console.log("Usuário admin confirmado:", userData);
   
   // Garantir que o campo is_fixed_for_new_users existe
   const missionData = {
@@ -113,21 +133,33 @@ export const createMission = async (mission: Omit<SupabaseMission, 'id' | 'creat
     is_fixed_for_new_users: mission.is_fixed_for_new_users || false,
   };
   
-  console.log("Tentando criar missão:", missionData);
+  console.log("Tentando criar missão com dados:", missionData);
   
   // Usar o cliente supabase com autenticação
-  const { data, error } = await supabase
-    .from('missions')
-    .insert([missionData])
-    .select()
-    .single();
+  const supabaseWithHeaders = supabase.from('missions');
+  
+  try {
+    const { data, error } = await supabaseWithHeaders
+      .insert([missionData])
+      .select()
+      .single();
 
-  if (error) {
-    console.error("Erro ao criar missão:", error);
-    return { mission: null, error: error.message };
+    if (error) {
+      console.error("Erro detalhado ao criar missão:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
+      return { mission: null, error: `${error.message} (${error.code})` };
+    }
+
+    console.log("Missão criada com sucesso:", data);
+    return { mission: data as SupabaseMission, error: null };
+  } catch (e) {
+    console.error("Exceção ao criar missão:", e);
+    return { mission: null, error: "Erro interno ao criar missão." };
   }
-
-  return { mission: data as SupabaseMission, error: null };
 };
 
 // Obter todas as missões
