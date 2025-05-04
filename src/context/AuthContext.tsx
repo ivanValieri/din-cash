@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { signInWithPhoneNumber, signUpUser, updateUserBalance as updateSupabaseUserBalance } from "@/services/supabaseService";
+import { signInWithPhoneNumber, signUpUser, updateUserBalance as updateSupabaseUserBalance, getUserById } from "@/services/supabaseService";
 import { SupabaseUser } from "@/config/supabase";
 import { supabase } from "@/config/supabase";
 
@@ -76,75 +76,109 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Tentar autenticação via Supabase Auth
-    const { user, error } = await signInWithPhoneNumber(phoneNumber, password);
-
-    if (user) {
-      // Verificar se a sessão está realmente autenticada
-      const { data: sessionData } = await supabase.auth.getSession();
+    try {
+      // Limpar sessão anterior para evitar conflitos
+      await supabase.auth.signOut();
       
-      if (!sessionData.session) {
+      // Tentar autenticação via Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        phone: phoneNumber,
+        password,
+      });
+      
+      if (authError) {
+        // Se não conseguir fazer login, tenta criar o usuário
+        if (authError.message.includes('Invalid login')) {
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            phone: phoneNumber,
+            password,
+          });
+          
+          if (signUpError) {
+            toast({
+              title: "Erro ao criar conta",
+              description: signUpError.message,
+              variant: "destructive",
+            });
+            return;
+          }
+          
+          // Criar usuário na tabela users
+          const { user: newUser, error: userError } = await signUpUser(phoneNumber, "Novo Usuário", password);
+          if (userError) {
+            toast({
+              title: "Erro ao criar perfil",
+              description: userError,
+              variant: "destructive",
+            });
+            return;
+          }
+          
+          setCurrentUser({
+            id: newUser.id,
+            phoneNumber: newUser.phone_number,
+            isAdmin: newUser.is_admin,
+            balance: newUser.balance,
+          });
+          
+          navigate("/dashboard");
+          toast({
+            title: "Conta criada com sucesso",
+            description: "Bem-vindo ao DinCash!",
+          });
+          return;
+        } else {
+          toast({
+            title: "Erro de login",
+            description: authError.message,
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
+      // Login bem-sucedido, buscar dados extras
+      const { user: userData, error: userError } = await getUserById(authData.user.id);
+      if (userError) {
         toast({
-          title: "Erro de autenticação",
-          description: "Sessão não autenticada. Tente novamente.",
+          title: "Erro ao buscar dados do usuário",
+          description: userError,
           variant: "destructive",
         });
         return;
       }
       
       setCurrentUser({
-        id: user.id,
-        phoneNumber: user.phone_number,
-        isAdmin: user.is_admin,
-        balance: user.balance,
+        id: userData.id,
+        phoneNumber: userData.phone_number,
+        isAdmin: userData.is_admin,
+        balance: userData.balance,
       });
-      if (user.is_admin) {
+      
+      if (userData.is_admin) {
         navigate("/admin");
       } else {
         navigate("/dashboard");
       }
+      
       toast({
         title: "Login realizado com sucesso",
         description: "Bem-vindo de volta!",
       });
-    } else {
-      // Se não existe, tenta criar
-      const { user: newUser, error: signUpError } = await signUpUser(phoneNumber, "Novo Usuário", password);
-      if (newUser) {
-        // Verificar se a sessão está realmente autenticada
-        const { data: sessionData } = await supabase.auth.getSession();
-        
-        if (!sessionData.session) {
-          toast({
-            title: "Erro de autenticação",
-            description: "Conta criada, mas sessão não autenticada. Tente fazer login.",
-            variant: "destructive",
-          });
-          return;
-        }
-        
-        setCurrentUser({
-          id: newUser.id,
-          phoneNumber: newUser.phone_number,
-          isAdmin: newUser.is_admin,
-          balance: newUser.balance,
-        });
-        navigate("/dashboard");
-        toast({
-          title: "Conta criada com sucesso",
-          description: "Bem-vindo ao DinCash!",
-        });
-      } else {
-        toast({
-          title: "Erro ao criar conta",
-          description: signUpError || "Ocorreu um erro ao criar a conta",
-          variant: "destructive",
-        });
-      }
+      
+    } catch (error) {
+      console.error("Erro no processo de login:", error);
+      toast({
+        title: "Erro de login",
+        description: "Ocorreu um erro inesperado. Tente novamente.",
+        variant: "destructive",
+      });
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Desconectar da autenticação Supabase
+    await supabase.auth.signOut();
     setCurrentUser(null);
     navigate("/");
     toast({

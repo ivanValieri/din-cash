@@ -10,12 +10,36 @@ const supabaseOptions = {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storageKey: 'supabase.auth.token',
+    // Usar localStorage para armazenar o token
+    storage: {
+      getItem: (key: string) => {
+        const value = localStorage.getItem(key);
+        return value ? value : null;
+      },
+      setItem: (key: string, value: string) => {
+        localStorage.setItem(key, value);
+      },
+      removeItem: (key: string) => {
+        localStorage.removeItem(key);
+      }
+    }
   },
+  global: {
+    // Sempre enviar os cabeçalhos de autenticação
+    headers: { 
+      'X-Supabase-Auth-Include': 'true'
+    }
+  }
 };
 
 // Cria o cliente do Supabase com as opções de autenticação
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, supabaseOptions);
+
+// Verifique se há uma sessão ao iniciar
+(async () => {
+  const { data } = await supabase.auth.getSession();
+  console.log("Sessão carregada:", data);
+})();
 
 // Interfaces para os tipos de dados
 export interface SupabaseUser {
