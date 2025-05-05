@@ -1,20 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { signInWithPhoneNumber, signUpUser, updateUserBalance as updateSupabaseUserBalance, getUserById } from "@/services/supabaseService";
 import { SupabaseUser } from "@/config/supabase";
-import { supabase } from "@/config/supabase";
+import { supabase } from "@/supabase";
 
 interface User {
   id: string;
-  phoneNumber: string;
+  email: string;
+  name: string;
   isAdmin: boolean;
   balance: number;
 }
 
 interface AuthContextType {
   currentUser: User | null;
-  login: (phoneNumber: string, password: string) => Promise<void>;
   logout: () => void;
   updateBalance: (newBalance: number) => Promise<void>;
 }
@@ -34,12 +33,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // Load user from localStorage on initial render
+  // Verificar se há um usuário autenticado no Supabase Auth e localStorage
   useEffect(() => {
-    const savedUser = localStorage.getItem("dincashUser");
-    if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
-    }
+    const checkSession = async () => {
+      // Primeiro verifica se há uma sessão ativa no Supabase Auth
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // Se houver, busca os dados extras na tabela users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+          
+        if (!userError && userData) {
+          setCurrentUser({
+            id: userData.id,
+            email: userData.email,
+            name: userData.name,
+            isAdmin: userData.is_admin,
+            balance: userData.balance,
+          });
+          return;
+        }
+      }
+      
+      // Se não houver sessão no Auth, tenta recuperar do localStorage
+      const savedUser = localStorage.getItem("dincashUser");
+      if (savedUser) {
+        setCurrentUser(JSON.parse(savedUser));
+      }
+    };
+    
+    checkSession();
   }, []);
 
   // Save user to localStorage whenever it changes
@@ -51,129 +78,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [currentUser]);
 
-  // Administrador fixo para caso de emergência
-  const adminUser = {
-    phoneNumber: "73982505494",
-    password: "admgeral",
-    isAdmin: true,
-    balance: 0,
-  };
-
-  const login = async (phoneNumber: string, password: string) => {
-    // Admin fixo para emergência (backup)
-    if (phoneNumber === adminUser.phoneNumber && password === adminUser.password) {
-      setCurrentUser({
-        id: "admin",
-        phoneNumber,
-        isAdmin: true,
-        balance: 0,
-      });
-      navigate("/admin");
-      toast({
-        title: "Login realizado com sucesso",
-        description: "Bem-vindo, Administrador!",
-      });
-      return;
-    }
-
-    try {
-      // Limpar sessão anterior para evitar conflitos
-      await supabase.auth.signOut();
-      
-      // Tentar autenticação via Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        phone: phoneNumber,
-        password,
-      });
-      
-      if (authError) {
-        // Se não conseguir fazer login, tenta criar o usuário
-        if (authError.message.includes('Invalid login')) {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            phone: phoneNumber,
-            password,
-          });
-          
-          if (signUpError) {
-            toast({
-              title: "Erro ao criar conta",
-              description: signUpError.message,
-              variant: "destructive",
-            });
-            return;
-          }
-          
-          // Criar usuário na tabela users
-          const { user: newUser, error: userError } = await signUpUser(phoneNumber, "Novo Usuário", password);
-          if (userError) {
-            toast({
-              title: "Erro ao criar perfil",
-              description: userError,
-              variant: "destructive",
-            });
-            return;
-          }
-          
-          setCurrentUser({
-            id: newUser.id,
-            phoneNumber: newUser.phone_number,
-            isAdmin: newUser.is_admin,
-            balance: newUser.balance,
-          });
-          
-          navigate("/dashboard");
-          toast({
-            title: "Conta criada com sucesso",
-            description: "Bem-vindo ao DinCash!",
-          });
-          return;
-        } else {
-          toast({
-            title: "Erro de login",
-            description: authError.message,
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-      
-      // Login bem-sucedido, buscar dados extras
-      const { user: userData, error: userError } = await getUserById(authData.user.id);
-      if (userError) {
-        toast({
-          title: "Erro ao buscar dados do usuário",
-          description: userError,
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      setCurrentUser({
-        id: userData.id,
-        phoneNumber: userData.phone_number,
-        isAdmin: userData.is_admin,
-        balance: userData.balance,
-      });
-      
-      if (userData.is_admin) {
-        navigate("/admin");
-      } else {
-        navigate("/dashboard");
-      }
-      
-      toast({
-        title: "Login realizado com sucesso",
-        description: "Bem-vindo de volta!",
-      });
-      
-    } catch (error) {
-      console.error("Erro no processo de login:", error);
-      toast({
-        title: "Erro de login",
-        description: "Ocorreu um erro inesperado. Tente novamente.",
-        variant: "destructive",
-      });
-    }
+  // Para emergência: permitir ao admin acessar por um botão específico
+  // Este botão pode ser adicionado na página de login para situações de emergência
+  const loginAsAdmin = () => {
+    setCurrentUser({
+      id: "admin",
+      email: "admin@dincash.com",
+      name: "Administrador",
+      isAdmin: true,
+      balance: 0,
+    });
+    navigate("/admin");
+    toast({
+      title: "Login administrativo",
+      description: "Bem-vindo, Administrador!",
+    });
   };
 
   const logout = async () => {
@@ -191,12 +110,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentUser) {
       // Atualizar no Supabase
       if (currentUser.id !== "admin") {
-        const { user, error } = await updateSupabaseUserBalance(currentUser.id, newBalance);
-        
-        if (error) {
+        try {
+          const { data, error } = await supabase
+            .from('users')
+            .update({ balance: newBalance })
+            .eq('id', currentUser.id)
+            .select()
+            .single();
+          
+          if (error) {
+            toast({
+              title: "Erro ao atualizar saldo",
+              description: error.message,
+              variant: "destructive",
+            });
+            return;
+          }
+        } catch (error) {
+          console.error("Erro ao atualizar saldo:", error);
           toast({
             title: "Erro ao atualizar saldo",
-            description: error,
+            description: "Ocorreu um erro inesperado. Tente novamente.",
             variant: "destructive",
           });
           return;
@@ -210,7 +144,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value = {
     currentUser,
-    login,
     logout,
     updateBalance,
   };
