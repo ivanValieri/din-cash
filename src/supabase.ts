@@ -83,32 +83,31 @@ export async function signUpWithMagicLink(email: string, name: string) {
 // Função para registro com email e senha
 export async function signUpWithEmailAndPassword(email: string, password: string, name: string) {
   try {
-    // Registrar o usuário com email e senha
+    // Registrar o usuário com email e senha (sem metadados para simplificar)
     const { data, error } = await supabase.auth.signUp({
       email,
-      password,
+      password
     });
     
     if (error) throw new Error(`Erro ao registrar: ${error.message}`);
     
+    // Se o usuário for criado com sucesso, atualize os metadados
     if (data.user) {
-      // Adicionar informações adicionais na tabela users
-      const { error: profileError } = await supabase
-        .from('users')
-        .upsert({
-          id: data.user.id,
-          email,
-          name,
-          balance: 0,
-          is_admin: false,
-          created_at: new Date().toISOString(),
-        }, { onConflict: 'id' });
+      // Aguardar um pouco para garantir que o trigger tenha tempo de executar
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      if (profileError) throw new Error(`Erro ao criar perfil: ${profileError.message}`);
+      // Agora atualizar os metadados do usuário
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: { name }
+      });
       
-      return data;
+      if (updateError) {
+        console.warn("Erro ao atualizar metadados:", updateError);
+      }
     }
-    throw new Error('Erro ao criar conta');
+    
+    console.log('Usuário registrado:', data);
+    return data;
   } catch (error) {
     console.error('Erro no registro:', error);
     throw error;
