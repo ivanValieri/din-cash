@@ -92,9 +92,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, supabaseOptio
 // Interfaces para os tipos de dados
 export interface SupabaseUser {
   id: string;
-  phone_number: string;
+  phone_number?: string; // Tornou-se opcional para refletir a mudança para autenticação por e-mail
   name: string;
-  email?: string;
+  email: string; // Agora é obrigatório, já que usaremos autenticação por e-mail
   balance: number;
   is_admin: boolean;
   created_at: string;
@@ -124,4 +124,4 @@ export interface SupabaseWithdrawal {
   amount: number;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
-} 
+}
