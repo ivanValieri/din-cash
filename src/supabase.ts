@@ -80,6 +80,57 @@ export async function signUpWithMagicLink(email: string, name: string) {
   }
 }
 
+// Função para registro com email e senha
+export async function signUpWithEmailAndPassword(email: string, password: string, name: string) {
+  try {
+    // Registrar o usuário com email e senha
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    
+    if (error) throw new Error(`Erro ao registrar: ${error.message}`);
+    
+    if (data.user) {
+      // Adicionar informações adicionais na tabela users
+      const { error: profileError } = await supabase
+        .from('users')
+        .upsert({
+          id: data.user.id,
+          email,
+          name,
+          balance: 0,
+          is_admin: false,
+          created_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+      
+      if (profileError) throw new Error(`Erro ao criar perfil: ${profileError.message}`);
+      
+      return data;
+    }
+    throw new Error('Erro ao criar conta');
+  } catch (error) {
+    console.error('Erro no registro:', error);
+    throw error;
+  }
+}
+
+// Função para login com email e senha
+export async function signInWithEmailAndPassword(email: string, password: string) {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (error) throw new Error(`Erro ao fazer login: ${error.message}`);
+    return data;
+  } catch (error) {
+    console.error('Erro no login:', error);
+    throw error;
+  }
+}
+
 // Função para atualizar o perfil do usuário na tabela users após autenticação
 export async function updateUserProfile(email: string, name: string) {
   const { data: { user } } = await supabase.auth.getUser();

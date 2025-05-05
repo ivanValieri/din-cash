@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase, signUpWithMagicLink, updateUserProfile } from "@/supabase";
+import { supabase, signUpWithEmailAndPassword, signInWithEmailAndPassword } from "@/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,6 +10,8 @@ import Footer from "@/components/Layout/Footer";
 
 const Login = () => {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -42,30 +44,11 @@ const Login = () => {
     checkSession();
   }, [navigate]);
 
-  // Verificar se a sessão foi criada após clicar no Magic Link
+  // Limpar os campos quando trocar de aba
   useEffect(() => {
-    const interval = setInterval(async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        try {
-          await updateUserProfile(email, name);
-          setSuccessMessage("Perfil atualizado com sucesso! Redirecionando...");
-          const { data: userData } = await supabase
-            .from("users")
-            .select("is_admin")
-            .eq("id", user.id)
-            .single();
-          navigate(userData?.is_admin ? "/admin" : "/dashboard");
-        } catch (err) {
-          setError("Erro ao atualizar perfil. Veja o console para detalhes.");
-          console.error("Erro ao atualizar perfil:", err);
-        }
-        clearInterval(interval);
-      }
-    }, 1000); // Verifica a cada segundo
-
-    return () => clearInterval(interval); // Limpa o intervalo ao desmontar o componente
-  }, [email, name, navigate]);
+    setError("");
+    setSuccessMessage("");
+  }, [activeTab]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,62 +56,7 @@ const Login = () => {
     setSuccessMessage("");
 
     // Validação básica
-    if (!email) {
-      setError("Digite seu e-mail");
-      return;
-    }
-
-    // Validação de formato de e-mail
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError("E-mail inválido. Insira um e-mail válido.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      
-      // Verificar se o usuário existe
-      const { data: userData } = await supabase
-        .from("users")
-        .select("id")
-        .eq("email", email)
-        .maybeSingle();
-      
-      if (!userData) {
-        setError("E-mail não encontrado. Se é novo usuário, utilize a aba Criar Conta.");
-        setIsSubmitting(false);
-        return;
-      }
-      
-      // Enviar link de acesso para o usuário existente
-      const { error: magicLinkError } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: import.meta.env.VITE_REDIRECT_URL || 'http://localhost:5173',
-        }
-      });
-      
-      if (magicLinkError) {
-        throw magicLinkError;
-      }
-      
-      setSuccessMessage("Link de acesso enviado! Verifique seu e-mail.");
-    } catch (err) {
-      console.error(err);
-      setError("Erro ao enviar link de acesso. Tente novamente.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setSuccessMessage("");
-
-    // Validação básica
-    if (!email || !name) {
+    if (!email || !password) {
       setError("Preencha todos os campos");
       return;
     }
@@ -142,11 +70,77 @@ const Login = () => {
 
     try {
       setIsSubmitting(true);
-      await signUpWithMagicLink(email, name);
-      setSuccessMessage("Magic Link enviado! Verifique seu e-mail para ativar sua conta.");
-    } catch (err) {
+      
+      // Login com email e senha
+      await signInWithEmailAndPassword(email, password);
+      
+      setSuccessMessage("Login realizado com sucesso! Redirecionando...");
+      
+      // Verificar se o usuário é admin para redirecionamento correto
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("is_admin")
+          .eq("id", user.id)
+          .single();
+        
+        setTimeout(() => {
+          navigate(userData?.is_admin ? "/admin" : "/dashboard");
+        }, 1000);
+      }
+    } catch (err: any) {
       console.error(err);
-      setError("Erro ao enviar Magic Link. Tente novamente.");
+      setError(err.message || "Erro ao fazer login. Verifique suas credenciais.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMessage("");
+
+    // Validação básica
+    if (!email || !password || !confirmPassword || !name) {
+      setError("Preencha todos os campos");
+      return;
+    }
+
+    // Validação de formato de e-mail
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("E-mail inválido. Insira um e-mail válido.");
+      return;
+    }
+
+    // Validação de senhas iguais
+    if (password !== confirmPassword) {
+      setError("As senhas não coincidem");
+      return;
+    }
+
+    // Validação de senha forte
+    if (password.length < 6) {
+      setError("A senha deve ter pelo menos 6 caracteres");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await signUpWithEmailAndPassword(email, password, name);
+      setSuccessMessage("Conta criada com sucesso! Você já pode fazer login.");
+      
+      // Mudar para a aba de login após o registro bem-sucedido
+      setTimeout(() => {
+        setActiveTab("login");
+        setPassword("");
+        setConfirmPassword("");
+      }, 2000);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Erro ao criar conta. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -163,7 +157,7 @@ const Login = () => {
               Acesse sua conta
             </CardTitle>
             <CardDescription className="text-center">
-              Login fácil e seguro com seu e-mail
+              Login e cadastro fácil com seu e-mail
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -190,9 +184,22 @@ const Login = () => {
                       className="w-full"
                       autoComplete="email"
                     />
-                    <p className="text-xs text-gray-500">
-                      Digite o e-mail que você usou para se cadastrar
-                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="login-password" className="block text-sm font-medium">
+                      Senha
+                    </label>
+                    <Input
+                      id="login-password"
+                      type="password"
+                      placeholder="Digite sua senha"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-full"
+                      autoComplete="current-password"
+                    />
                   </div>
 
                   {error && activeTab === "login" && (
@@ -207,12 +214,8 @@ const Login = () => {
                     className="w-full btn-primary"
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? "Enviando..." : "Enviar Link de Acesso"}
+                    {isSubmitting ? "Entrando..." : "Entrar"}
                   </Button>
-                  
-                  <p className="text-xs text-center text-gray-500 mt-4">
-                    Você receberá um link no seu e-mail para acessar sua conta
-                  </p>
                 </form>
               </TabsContent>
               
@@ -251,6 +254,38 @@ const Login = () => {
                     />
                   </div>
 
+                  <div className="space-y-2">
+                    <label htmlFor="signup-password" className="block text-sm font-medium">
+                      Senha
+                    </label>
+                    <Input
+                      id="signup-password"
+                      type="password"
+                      placeholder="Digite sua senha"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-full"
+                      autoComplete="new-password"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="confirm-password" className="block text-sm font-medium">
+                      Confirmar Senha
+                    </label>
+                    <Input
+                      id="confirm-password"
+                      type="password"
+                      placeholder="Confirme sua senha"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-full"
+                      autoComplete="new-password"
+                    />
+                  </div>
+
                   {error && activeTab === "signup" && (
                     <div className="text-red-500 text-sm">{error}</div>
                   )}
@@ -263,12 +298,8 @@ const Login = () => {
                     className="w-full btn-primary"
                     disabled={isSubmitting}
                   >
-                    {isSubmitting ? "Enviando..." : "Criar Conta"}
+                    {isSubmitting ? "Criando..." : "Criar Conta"}
                   </Button>
-                  
-                  <p className="text-xs text-center text-gray-500 mt-4">
-                    Você receberá um link de ativação no seu e-mail
-                  </p>
                 </form>
               </TabsContent>
             </Tabs>
