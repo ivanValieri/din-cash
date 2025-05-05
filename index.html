@@ -15,6 +15,17 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@lovable_dev" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    
+    <!-- Supabase Auth Helper -->
+    <script>
+      // Essa função ajuda a processar o Magic Link quando o usuário é redirecionado de volta
+      (function() {
+        // Verifica se há parâmetros de hash na URL (comum em autenticação)
+        if (window.location.hash) {
+          console.log('Detectado hash na URL - possível redirecionamento de autenticação');
+        }
+      })();
+    </script>
   </head>
 
   <body>
