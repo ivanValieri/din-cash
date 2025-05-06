@@ -14,7 +14,8 @@ interface User {
 
 interface AuthContextType {
   currentUser: User | null;
-  logout: () => void;
+  loading: boolean;
+  logout: () => Promise<void>;
   updateBalance: (newBalance: number) => Promise<void>;
 }
 
@@ -30,43 +31,85 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // Verificar se há um usuário autenticado no Supabase Auth e localStorage
+  // Verificar se há um usuário autenticado ao carregar
   useEffect(() => {
     const checkSession = async () => {
-      // Primeiro verifica se há uma sessão ativa no Supabase Auth
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        // Se houver, busca os dados extras na tabela users
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', user.id)
-          .single();
+      try {
+        setLoading(true);
+        // Verificar se existe uma sessão
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          console.log("Usuário encontrado:", session.user.id);
+          // Buscar dados adicionais na tabela users
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+            
+          if (userError) {
+            console.error("Erro ao buscar dados do usuário:", userError);
+            return;
+          }
           
-        if (!userError && userData) {
-          setCurrentUser({
-            id: userData.id,
-            email: userData.email,
-            name: userData.name,
-            isAdmin: userData.is_admin,
-            balance: userData.balance,
-          });
-          return;
+          if (userData) {
+            setCurrentUser({
+              id: userData.id,
+              email: userData.email || session.user.email || '',
+              name: userData.name || 'Usuário',
+              isAdmin: userData.is_admin || false,
+              balance: userData.balance || 0,
+            });
+          }
         }
-      }
-      
-      // Se não houver sessão no Auth, tenta recuperar do localStorage
-      const savedUser = localStorage.getItem("dincashUser");
-      if (savedUser) {
-        setCurrentUser(JSON.parse(savedUser));
+      } catch (error) {
+        console.error("Erro ao verificar sessão:", error);
+      } finally {
+        setLoading(false);
       }
     };
     
+    // Verificar a sessão inicial
     checkSession();
+    
+    // Configurar listener para mudanças de autenticação
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log("Auth state change:", event);
+        
+        if (event === 'SIGNED_IN' && session) {
+          // Atualizar o estado do usuário quando fizer login
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+            
+          if (!userError && userData) {
+            setCurrentUser({
+              id: userData.id,
+              email: userData.email || session.user.email || '',
+              name: userData.name || 'Usuário',
+              isAdmin: userData.is_admin || false,
+              balance: userData.balance || 0,
+            });
+          }
+        } else if (event === 'SIGNED_OUT') {
+          // Limpar o estado do usuário quando fizer logout
+          setCurrentUser(null);
+        }
+      }
+    );
+    
+    // Limpar o listener quando o componente for desmontado
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   // Save user to localStorage whenever it changes
@@ -96,54 +139,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    // Desconectar da autenticação Supabase
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    navigate("/");
-    toast({
-      title: "Logout realizado",
-      description: "Até mais!",
-    });
+    try {
+      await supabase.auth.signOut();
+      setCurrentUser(null);
+      navigate('/login');
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+    }
   };
 
   const updateBalance = async (newBalance: number) => {
-    if (currentUser) {
+    if (!currentUser) return;
+    
+    try {
       // Atualizar no Supabase
-      if (currentUser.id !== "admin") {
-        try {
-          const { data, error } = await supabase
-            .from('users')
-            .update({ balance: newBalance })
-            .eq('id', currentUser.id)
-            .select()
-            .single();
-          
-          if (error) {
-            toast({
-              title: "Erro ao atualizar saldo",
-              description: error.message,
-              variant: "destructive",
-            });
-            return;
-          }
-        } catch (error) {
-          console.error("Erro ao atualizar saldo:", error);
-          toast({
-            title: "Erro ao atualizar saldo",
-            description: "Ocorreu um erro inesperado. Tente novamente.",
-            variant: "destructive",
-          });
-          return;
-        }
+      const { error } = await supabase
+        .from('users')
+        .update({ balance: newBalance })
+        .eq('id', currentUser.id);
+      
+      if (error) {
+        console.error("Erro ao atualizar saldo:", error);
+        return;
       }
       
-      // Atualizar localmente
+      // Atualizar o estado local
       setCurrentUser({ ...currentUser, balance: newBalance });
+    } catch (error) {
+      console.error("Erro ao atualizar saldo:", error);
     }
   };
 
   const value = {
     currentUser,
+    loading,
     logout,
     updateBalance,
   };
