@@ -83,10 +83,17 @@ export async function signUpWithMagicLink(email: string, name: string) {
 // Função para registro com email e senha
 export async function signUpWithEmailAndPassword(email: string, password: string, name: string) {
   try {
-    // Registrar o usuário apenas com email e senha - o mais simples possível
+    // Registrar o usuário com email e senha e incluir o redirecionamento
+    const redirectUrl = import.meta.env.VITE_REDIRECT_URL || window.location.origin;
     const { data, error } = await supabase.auth.signUp({
       email,
-      password
+      password,
+      options: {
+        emailRedirectTo: redirectUrl,
+        data: {
+          name: name
+        }
+      }
     });
     
     if (error) throw new Error(`Erro ao registrar: ${error.message}`);
@@ -104,12 +111,18 @@ export async function signUpWithEmailAndPassword(email: string, password: string
 // Função para login com email e senha
 export async function signInWithEmailAndPassword(email: string, password: string) {
   try {
+    console.log('Tentando login com:', email);
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     
-    if (error) throw new Error(`Erro ao fazer login: ${error.message}`);
+    if (error) {
+      console.error('Erro de login:', error.message);
+      throw new Error(`Erro ao fazer login: ${error.message}`);
+    }
+    
+    console.log('Login bem-sucedido:', data.user?.id);
     return data;
   } catch (error) {
     console.error('Erro no login:', error);

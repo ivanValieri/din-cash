@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase, signUpWithEmailAndPassword, signInWithEmailAndPassword } from "@/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import Header from "@/components/Layout/Header";
 import Footer from "@/components/Layout/Footer";
 
@@ -17,8 +18,23 @@ const Login = () => {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [activeTab, setActiveTab] = useState("login"); // "login" ou "signup"
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Verificar parâmetros de URL para erros
+  useEffect(() => {
+    const params = new URLSearchParams(location.hash.substring(1));
+    const errorCode = params.get('error_code');
+    const errorDescription = params.get('error_description');
+    
+    if (errorCode === 'otp_expired') {
+      setError("O link de confirmação expirou. Por favor, tente fazer login ou registre-se novamente.");
+    } else if (errorDescription) {
+      setError(decodeURIComponent(errorDescription).replace(/\+/g, ' '));
+    }
+  }, [location]);
 
   // Verificar se o usuário já está autenticado
   useEffect(() => {
@@ -48,6 +64,7 @@ const Login = () => {
   useEffect(() => {
     setError("");
     setSuccessMessage("");
+    setNeedsEmailConfirmation(false);
   }, [activeTab]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -72,22 +89,47 @@ const Login = () => {
       setIsSubmitting(true);
       
       // Login com email e senha
-      await signInWithEmailAndPassword(email, password);
-      
-      setSuccessMessage("Login realizado com sucesso! Redirecionando...");
-      
-      // Verificar se o usuário é admin para redirecionamento correto
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: userData } = await supabase
-          .from("users")
-          .select("is_admin")
-          .eq("id", user.id)
-          .single();
+      try {
+        await signInWithEmailAndPassword(email, password);
         
-        setTimeout(() => {
-          navigate(userData?.is_admin ? "/admin" : "/dashboard");
-        }, 1000);
+        setSuccessMessage("Login realizado com sucesso! Redirecionando...");
+        
+        // Verificar se o usuário é admin para redirecionamento correto
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: userData } = await supabase
+            .from("users")
+            .select("is_admin")
+            .eq("id", user.id)
+            .single();
+          
+          setTimeout(() => {
+            navigate(userData?.is_admin ? "/admin" : "/dashboard");
+          }, 1000);
+        }
+      } catch (err: any) {
+        // Verificar se o erro é de email não confirmado
+        if (err.message && (
+            err.message.includes("Email not confirmed") || 
+            err.message.includes("Invalid login credentials")
+          )) {
+          // Verificar se o usuário existe mas não confirmou o email
+          const { data } = await supabase.auth.signInWithOtp({
+            email,
+            options: {
+              shouldCreateUser: false
+            }
+          });
+          
+          if (data) {
+            setNeedsEmailConfirmation(true);
+            setError("Seu email ainda não foi confirmado. Enviamos um novo link de confirmação para seu email.");
+          } else {
+            setError("Email ou senha inválidos. Verifique suas credenciais.");
+          }
+        } else {
+          setError(err.message || "Erro ao fazer login. Verifique suas credenciais.");
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -129,18 +171,24 @@ const Login = () => {
 
     try {
       setIsSubmitting(true);
-      await signUpWithEmailAndPassword(email, password, name);
-      setSuccessMessage("Conta criada com sucesso! Você já pode fazer login.");
+      const { user } = await signUpWithEmailAndPassword(email, password, name);
       
-      // Mudar para a aba de login após o registro bem-sucedido
-      setTimeout(() => {
-        setActiveTab("login");
-        setPassword("");
-        setConfirmPassword("");
-      }, 2000);
+      if (user?.identities?.length === 0) {
+        setError("Este email já está em uso. Por favor, faça login ou use outro email.");
+      } else {
+        setSuccessMessage("Conta criada com sucesso! Um email de confirmação foi enviado. Por favor, verifique sua caixa de entrada.");
+        setNeedsEmailConfirmation(true);
+      }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Erro ao criar conta. Tente novamente.");
+      if (err.message && err.message.includes("already registered")) {
+        setError("Este email já está registrado. Por favor, faça login.");
+        setTimeout(() => {
+          setActiveTab("login");
+        }, 2000);
+      } else {
+        setError(err.message || "Erro ao criar conta. Tente novamente.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -161,6 +209,14 @@ const Login = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {needsEmailConfirmation && (
+              <Alert className="mb-4 bg-yellow-50 border-yellow-200 text-yellow-800">
+                <AlertDescription>
+                  Verifique seu email para confirmar sua conta. Você precisa clicar no link de confirmação antes de fazer login.
+                </AlertDescription>
+              </Alert>
+            )}
+
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-4">
                 <TabsTrigger value="login">Entrar</TabsTrigger>
