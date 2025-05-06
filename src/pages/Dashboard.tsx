@@ -15,14 +15,21 @@ const Dashboard = () => {
   useEffect(() => {
     const checkAuth = async () => {
       if (!loading && !currentUser) {
+        console.log("Nenhum usuário autenticado, redirecionando para login");
         navigate("/login");
       } else if (currentUser) {
+        console.log("Usuário autenticado:", currentUser);
+        console.log("É admin?", currentUser.isAdmin);
+        
         setUserName(currentUser.name);
         setUserEmail(currentUser.email);
         
         // Redirecionar para rota de admin se o usuário for administrador
         if (currentUser.isAdmin) {
+          console.log("Usuário é admin, redirecionando para painel administrativo");
           navigate("/admin");
+        } else {
+          console.log("Usuário não é admin, permanecendo no dashboard");
         }
       }
     };

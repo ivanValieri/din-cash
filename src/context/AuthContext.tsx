@@ -60,11 +60,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (userData) {
             // Lendo dados do perfil JSONB
             const profile = userData.profile || {};
+            console.log("Dados brutos do usuário:", userData);
+            console.log("Estrutura do perfil:", profile);
+            console.log("raw_user_meta_data:", userData.raw_user_meta_data);
+            
+            // Verificar is_admin em ambos os locais possíveis
+            const isAdminFromProfile = !!profile.is_admin;
+            const isAdminFromMeta = !!(userData.raw_user_meta_data && userData.raw_user_meta_data.is_admin);
+            
+            console.log("Admin do profile:", isAdminFromProfile);
+            console.log("Admin do meta_data:", isAdminFromMeta);
+            
             setCurrentUser({
               id: userData.id,
               email: userData.email || session.user.email || '',
               name: profile.name || 'Usuário',
-              isAdmin: profile.is_admin || false,
+              isAdmin: isAdminFromProfile || isAdminFromMeta || false,
               balance: profile.balance || 0,
             });
           }
@@ -95,11 +106,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (!userError && userData) {
             // Lendo dados do perfil JSONB
             const profile = userData.profile || {};
+            console.log("Dados brutos do usuário:", userData);
+            console.log("Estrutura do perfil:", profile);
+            console.log("raw_user_meta_data:", userData.raw_user_meta_data);
+            
+            // Verificar is_admin em ambos os locais possíveis
+            const isAdminFromProfile = !!profile.is_admin;
+            const isAdminFromMeta = !!(userData.raw_user_meta_data && userData.raw_user_meta_data.is_admin);
+            
+            console.log("Admin do profile:", isAdminFromProfile);
+            console.log("Admin do meta_data:", isAdminFromMeta);
+            
             setCurrentUser({
               id: userData.id,
               email: userData.email || session.user.email || '',
               name: profile.name || 'Usuário',
-              isAdmin: profile.is_admin || false,
+              isAdmin: isAdminFromProfile || isAdminFromMeta || false,
               balance: profile.balance || 0,
             });
           }
