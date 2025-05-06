@@ -1,38 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/supabase';
+import { useAuth } from '@/context/AuthContext';
 import Header from '@/components/Layout/Header';
 import Footer from '@/components/Layout/Footer';
 
 const Admin = () => {
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     const checkAdmin = async () => {
       try {
-        // Verificar se o usuário está autenticado
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
+        // Usar currentUser do contexto de autenticação
+        if (loading) return;
+        
+        if (!currentUser) {
+          console.log('Nenhum usuário conectado, redirecionando...');
           navigate('/login');
           return;
         }
 
-        // Verificar se o usuário é admin
-        const { data, error } = await supabase
-          .from('users')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single();
-
-        if (error || !data?.is_admin) {
-          console.error('Acesso negado ou erro:', error);
+        // Verificar se o usuário é admin usando o contexto
+        if (!currentUser.isAdmin) {
+          console.log('Usuário não é administrador, redirecionando...');
           navigate('/dashboard');
           return;
         }
 
-        setIsAdmin(true);
+        // Se chegou aqui, o usuário é admin
         setLoading(false);
       } catch (error) {
         console.error('Erro ao verificar admin:', error);
@@ -41,14 +38,17 @@ const Admin = () => {
     };
 
     checkAdmin();
-  }, [navigate]);
+  }, [currentUser, navigate, loading]);
 
   if (loading) {
     return (
       <div className="flex flex-col min-h-screen">
         <Header />
         <main className="flex-grow flex items-center justify-center">
-          <p>Carregando...</p>
+          <div className="text-center">
+            <h2 className="text-xl font-semibold mb-2">Carregando...</h2>
+            <p>Verificando permissões de administrador</p>
+          </div>
         </main>
         <Footer />
       </div>
