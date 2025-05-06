@@ -58,12 +58,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           
           if (userData) {
+            // Lendo dados do perfil JSONB
+            const profile = userData.profile || {};
             setCurrentUser({
               id: userData.id,
               email: userData.email || session.user.email || '',
-              name: userData.name || 'Usuário',
-              isAdmin: userData.is_admin || false,
-              balance: userData.balance || 0,
+              name: profile.name || 'Usuário',
+              isAdmin: profile.is_admin || false,
+              balance: profile.balance || 0,
             });
           }
         }
@@ -91,12 +93,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             .single();
             
           if (!userError && userData) {
+            // Lendo dados do perfil JSONB
+            const profile = userData.profile || {};
             setCurrentUser({
               id: userData.id,
               email: userData.email || session.user.email || '',
-              name: userData.name || 'Usuário',
-              isAdmin: userData.is_admin || false,
-              balance: userData.balance || 0,
+              name: profile.name || 'Usuário',
+              isAdmin: profile.is_admin || false,
+              balance: profile.balance || 0,
             });
           }
         } else if (event === 'SIGNED_OUT') {
@@ -152,10 +156,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!currentUser) return;
     
     try {
-      // Atualizar no Supabase
+      // Primeiro obter o perfil atual
+      const { data: userData, error: fetchError } = await supabase
+        .from('users')
+        .select('profile')
+        .eq('id', currentUser.id)
+        .single();
+      
+      if (fetchError) {
+        console.error("Erro ao buscar perfil:", fetchError);
+        return;
+      }
+      
+      // Criar um novo objeto profile combinando o existente com o novo saldo
+      const currentProfile = userData.profile || {};
+      const updatedProfile = { ...currentProfile, balance: newBalance };
+      
+      // Atualizar o perfil
       const { error } = await supabase
         .from('users')
-        .update({ balance: newBalance })
+        .update({ profile: updatedProfile })
         .eq('id', currentUser.id);
       
       if (error) {
