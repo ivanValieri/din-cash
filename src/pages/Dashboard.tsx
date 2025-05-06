@@ -19,6 +19,11 @@ const Dashboard = () => {
       } else if (currentUser) {
         setUserName(currentUser.name);
         setUserEmail(currentUser.email);
+        
+        // Redirecionar para rota de admin se o usuário for administrador
+        if (currentUser.isAdmin) {
+          navigate("/admin");
+        }
       }
     };
 
